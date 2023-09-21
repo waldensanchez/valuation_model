@@ -1,3 +1,4 @@
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import requests
@@ -89,3 +90,73 @@ def load_full_excel(path: str):
         pd.MultiIndex.from_frame( df[df.columns[:2]] )
         )[df.columns[2:]].transpose()
     return df
+
+def quarters(dates_data):
+    data = pd.Series(dates_data).dropna().values
+    dates = [datetime.strptime(value,'%Y-%m-%d') for value in data]
+    return np.array([date - pd.tseries.offsets.DateOffset(days=1) + pd.tseries.offsets.QuarterEnd() for date in  dates])
+
+def assets(income_statement: pd.DataFrame):
+    """
+    income_statement: DataFrame with all the Income Statements. Functions.load_full_excel('Data/Income/Income_Statement.xlsx')
+    """
+    tickers = list(np.unique(np.array([income_statement.columns[i][0] for i in range(len(income_statement.columns))])))
+    return tickers
+
+def prices_date(balance_statement: pd.DataFrame, prices: pd.DataFrame, sp500: list):
+    """
+    Function that cleans dates in prices in order for them to match with the last fiscal date, for prices in weekends last prices available is taken.
+
+    balance_statement: DataFrame with all the balance_statements. Functions.load_full_excel('Data/Balance/Balance_Statement.xlsx')
+    prices: Precio de los activos. yf.download(tickers=sp500, start='2018-09-01', progress=False)['Adj Close']
+    sp500: Lista de activos. Usar assets formula.
+
+    """
+    fiscal_endings = quarters(balance_statement[sp500[0]]['fiscalDateEnding'].values)
+    # Filtrado Precios
+    comparisson_list = prices.index.values
+    dates_test = pd.to_datetime( [date if date in comparisson_list else comparisson_list[comparisson_list < date][-1] for date in fiscal_endings] )
+    prices_filtered = prices.loc[dates_test] # Con fechas más cercanas al día fiscal
+    prices_fiscal = prices_filtered.copy()
+    prices_fiscal['fiscalDateEnding'] = fiscal_endings
+    prices_fiscal = prices_fiscal.set_index('fiscalDateEnding')
+    prices_fiscal.columns = pd.MultiIndex.from_tuples( [(value,'Adj Close') for value in prices_fiscal.columns.values] )
+    return prices_fiscal
+
+
+def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp500: list, prices_fiscal: list):
+    """"
+    Return a Clean DataFrame with selected variables ready to calculate finantial ratios.
+
+    balance_statement: DataFrame with all the balance_statements. Functions.load_full_excel('Data/Balance/Balance_Statement.xlsx')
+    income_statement: DataFrame with all the income statements. Functions.load_full_excel('Data/Income/Income_Statement.xlsx')
+    sp500: Lista de activos. Usar assets formula.
+    prices_fiscal: Precio de los activos despues de usar función prices_date.
+    """
+    # Datos necesarios de los Estados Financieros
+    balance_cols = ['fiscalDateEnding','currentDebt','inventory','totalAssets','totalCurrentAssets','currentAccountsPayable','currentNetReceivables','commonStockSharesOutstanding']
+    income_cols = ['totalRevenue','costofGoodsAndServicesSold','costOfRevenue']
+    # Formatos de Fecha homogeneos
+    balance = balance_statement[sp500[0]][balance_cols]
+    balance['fiscalDateEnding'] = quarters(balance['fiscalDateEnding'].values)
+    balance = balance.set_index('fiscalDateEnding')
+    income = income_statement[sp500[0]][income_cols]
+    income['fiscalDateEnding'] = balance.index.values
+    income = income.set_index('fiscalDateEnding')
+    # Unir columnas
+    company = pd.concat([balance,income,prices_fiscal[sp500[0]]], axis = 1)
+    company.columns = pd.MultiIndex.from_tuples( [(sp500[0],value) for value in company.columns.values] )
+    companies = company.copy()
+    for ticker in sp500[1:]:
+        # Formatos de Fecha homogeneos
+        balance = balance_statement[sp500[0]][balance_cols]
+        balance['fiscalDateEnding'] = quarters(balance['fiscalDateEnding'].values)
+        balance = balance.set_index('fiscalDateEnding')
+        income = income_statement[ticker][income_cols]
+        income['fiscalDateEnding'] = balance.index.values
+        income = income.set_index('fiscalDateEnding')
+        # Unir columnas
+        company = pd.concat([balance,income,prices_fiscal[ticker]], axis = 1)
+        company.columns = pd.MultiIndex.from_tuples( [(ticker,value) for value in company.columns.values] )
+        companies = pd.concat([companies,company], axis=1)
+    return companies
