@@ -135,7 +135,7 @@ def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp
     """
     # Datos necesarios de los Estados Financieros
     balance_cols = ['fiscalDateEnding','currentDebt','inventory','totalAssets','totalCurrentAssets','currentAccountsPayable','currentNetReceivables','commonStockSharesOutstanding']
-    income_cols = ['totalRevenue','costofGoodsAndServicesSold','costOfRevenue']
+    income_cols = ['totalRevenue','costofGoodsAndServicesSold','costOfRevenue','netIncome']
     # Formatos de Fecha homogeneos
     balance = balance_statement[sp500[0]][balance_cols]
     balance['fiscalDateEnding'] = quarters(balance['fiscalDateEnding'].values)
@@ -160,3 +160,17 @@ def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp
         company.columns = pd.MultiIndex.from_tuples( [(ticker,value) for value in company.columns.values] )
         companies = pd.concat([companies,company], axis=1)
     return companies
+
+def tabular_df(financial_info: pd.DataFrame, sp500: list):
+    """
+    financial_info: DataFrame resultant from using function clean_df.
+    sp500: Lista de activos. Usar assets formula.
+    """
+    table = []
+    for ticker in sp500:
+        partial = financial_info[ticker].reset_index()
+        partial['Stock'] = ticker
+        table.append(partial)
+    table = pd.concat(table, axis=0)
+    order = ['Stock'] + list(table.columns.values[:-1])
+    return table.reindex(columns=order)
