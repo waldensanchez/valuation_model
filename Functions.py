@@ -173,4 +173,60 @@ def tabular_df(financial_info: pd.DataFrame, sp500: list):
         table.append(partial)
     table = pd.concat(table, axis=0)
     order = ['Stock'] + list(table.columns.values[:-1])
-    return table.reindex(columns=order)
+    table = table.reindex(columns=order)
+    table = table.fillna(0)
+    for column in table.columns[2:-1]:
+        table[column] = table[column].apply(float)
+    return table
+
+def PER(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """
+    ratio = data_table['Adj Close'] / (data_table['netIncome'] / data_table['commonStockSharesOutstanding'])
+    return ratio
+
+
+def PBV(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """
+    ratio = ( data_table['commonStockSharesOutstanding'] *  data_table['Adj Close'] ) / data_table['totalAssets']
+    return ratio
+
+def acid(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """
+    ratio = ( data_table['totalCurrentAssets'] *  data_table['inventory'] ) / data_table['currentDebt']
+    return ratio
+
+def AR(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """
+    ratio = ( data_table['totalCurrentAssets'] *  data_table['inventory'] ) / data_table['currentDebt']
+    return ratio
+
+def CCC(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    days_sales_of_inventory = 365 / ( data_table['costOfRevenue'] / data_table['inventory'] )
+    days_sales_outstanding = 365 / ( data_table['totalRevenue'] / data_table['currentNetReceivables'] )
+    days_payables_outstanding = 365 / ( data_table['costOfRevenue'] / data_table['currentAccountsPayable'] )
+    return days_sales_of_inventory + days_sales_outstanding - days_payables_outstanding
+
+def financial_ratios(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    financials = data_table.copy()
+    financials['PER'] = PER(data_table)
+    financials['PBV'] = PBV(data_table)
+    financials['Acid'] = acid(data_table)
+    financials['AR'] = AR(data_table)
+    financials['CCC'] = CCC(data_table)
+    return financials[['Stock','fiscalDateEnding','PER','PBV','Acid','AR','CCC']]
+
+
