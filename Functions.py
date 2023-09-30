@@ -1,3 +1,4 @@
+from sklearn.impute import KNNImputer
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -124,7 +125,7 @@ def prices_date(balance_statement: pd.DataFrame, prices: pd.DataFrame, sp500: li
     return prices_fiscal
 
 
-def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp500: list, prices_fiscal: list):
+def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp500: list, prices_fiscal: pd.DataFrame):
     """"
     Return a Clean DataFrame with selected variables ready to calculate finantial ratios.
 
@@ -134,8 +135,14 @@ def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp
     prices_fiscal: Precio de los activos despues de usar función prices_date.
     """
     # Datos necesarios de los Estados Financieros
-    balance_cols = ['fiscalDateEnding','currentDebt','inventory','totalAssets','totalCurrentAssets','currentAccountsPayable','currentNetReceivables','commonStockSharesOutstanding']
+    balance_cols = ['fiscalDateEnding','currentDebt','inventory','totalAssets','totalCurrentAssets',
+                    'currentAccountsPayable','currentNetReceivables','commonStockSharesOutstanding','totalLiabilities','totalShareholderEquity']
     income_cols = ['totalRevenue','costofGoodsAndServicesSold','costOfRevenue','netIncome']
+
+    # Get Returns
+    returns = prices_fiscal.pct_change()
+    returns.columns = pd.MultiIndex.from_tuples([( returns.columns[i][0],'Return') for i in range(len(returns.columns))])
+
     # Formatos de Fecha homogeneos
     balance = balance_statement[sp500[0]][balance_cols]
     balance['fiscalDateEnding'] = quarters(balance['fiscalDateEnding'].values)
@@ -144,9 +151,10 @@ def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp
     income['fiscalDateEnding'] = balance.index.values
     income = income.set_index('fiscalDateEnding')
     # Unir columnas
-    company = pd.concat([balance,income,prices_fiscal[sp500[0]]], axis = 1)
+    company = pd.concat([balance,income,prices_fiscal[sp500[0]],returns[sp500[0]]], axis = 1)
     company.columns = pd.MultiIndex.from_tuples( [(sp500[0],value) for value in company.columns.values] )
     companies = company.copy()
+
     for ticker in sp500[1:]:
         # Formatos de Fecha homogeneos
         balance = balance_statement[sp500[0]][balance_cols]
@@ -156,9 +164,12 @@ def clean_df(balance_statement: pd.DataFrame, income_statement: pd.DataFrame, sp
         income['fiscalDateEnding'] = balance.index.values
         income = income.set_index('fiscalDateEnding')
         # Unir columnas
-        company = pd.concat([balance,income,prices_fiscal[ticker]], axis = 1)
+        company = pd.concat([balance,income,prices_fiscal[ticker],returns[ticker]], axis = 1)
         company.columns = pd.MultiIndex.from_tuples( [(ticker,value) for value in company.columns.values] )
         companies = pd.concat([companies,company], axis=1)
+    companies = companies.iloc[1:]
+    for ticker in sp500:
+        companies[(ticker,'Return')] = companies[(ticker,'Return')].apply(lambda x: 1 if x > 0 else 0)
     return companies
 
 def tabular_df(financial_info: pd.DataFrame, sp500: list):
@@ -194,12 +205,20 @@ def PBV(data_table: pd.DataFrame):
     ratio = ( data_table['commonStockSharesOutstanding'] *  data_table['Adj Close'] ) / data_table['totalAssets']
     return ratio
 
-def acid(data_table: pd.DataFrame):
+def Acid_test(data_table: pd.DataFrame):
     """"
     data_table: DataFrame resultant from using tabular_df function.
     """
-    ratio = ( data_table['totalCurrentAssets'] *  data_table['inventory'] ) / data_table['currentDebt']
+    ratio = ( data_table['totalCurrentAssets'] -  data_table['inventory'] ) / data_table['currentDebt']
     return ratio
+
+def ATR(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """
+    ratio = data_table['totalRevenue'] / data_table['totalAssets']
+    return ratio
+
 
 def AR(data_table: pd.DataFrame):
     """"
@@ -217,6 +236,34 @@ def CCC(data_table: pd.DataFrame):
     days_payables_outstanding = 365 / ( data_table['costOfRevenue'] / data_table['currentAccountsPayable'] )
     return days_sales_of_inventory + days_sales_outstanding - days_payables_outstanding
 
+def ROA(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    ratio = data_table['netIncome'] / data_table['totalAssets']
+    return ratio
+
+def DER(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    ratio = data_table['totalLiabilities'] / data_table['totalShareholderEquity']
+    return ratio
+
+def NPM(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    ratio = data_table['netIncome'] / data_table['totalRevenue']
+    return ratio
+
+def EM(data_table: pd.DataFrame):
+    """"
+    data_table: DataFrame resultant from using tabular_df function.
+    """ 
+    ratio = data_table['totalAssets'] / data_table['totalShareholderEquity']
+    return ratio
+
 def financial_ratios(data_table: pd.DataFrame):
     """"
     data_table: DataFrame resultant from using tabular_df function.
@@ -224,9 +271,73 @@ def financial_ratios(data_table: pd.DataFrame):
     financials = data_table.copy()
     financials['PER'] = PER(data_table)
     financials['PBV'] = PBV(data_table)
-    financials['Acid'] = acid(data_table)
-    financials['AR'] = AR(data_table)
+    financials['Acid_test'] = Acid_test(data_table)
+    financials['ATR'] = ATR(data_table)
     financials['CCC'] = CCC(data_table)
-    return financials[['Stock','fiscalDateEnding','PER','PBV','Acid','AR','CCC']]
+    financials['ROA'] = ROA(data_table)
+    financials['DER'] = DER(data_table)
+    financials['NPM'] = NPM(data_table)
+    financials['EM'] = EM(data_table)
+    return financials[['Stock','fiscalDateEnding','PER','PBV','Acid_test','ATR','CCC','ROA','DER','NPM','EM','Return']]
 
+def dqr(data):
+    # Lista de variables de la base de datos
+    columns = pd.DataFrame(list(data.columns.values), columns=['Nombres'], index=list(data.columns.values))
 
+    # Lista de tipos de datos
+    data_types = pd.DataFrame(data.dtypes, columns=['Data_Type'])
+
+    #  Lista de valores perdidos (NaN)
+    missing_values = pd.DataFrame(data.isnull().sum(), columns=['Missing_Values'])
+
+    # Lista de valores presentes
+    present_values = pd.DataFrame(data.count(), columns=['Present_Values'])
+
+    # Número de valores únicos para cada variable
+    unique_values = pd.DataFrame(columns=['Num_Unique_Values'])
+    for col in list(data.columns.values):
+        unique_values.loc[col] = [data[col].nunique()]
+
+    # Lista de valores mínimos para cada variable
+    min_values = pd.DataFrame(columns=['Min'])
+    for col in list(data.columns.values):
+        try:
+            min_values.loc[col] = [data[col].min()]
+        except:
+            pass
+
+    # Lista de valores máximos para cada variable
+    max_values = pd.DataFrame(columns=['Max'])
+    for col in list(data.columns.values):
+        try:
+            max_values.loc[col] = [data[col].max()]
+        except:
+            pass
+    # Columna 'Categórica' que obtenga un valor booleano True cuando mi columna es una variable
+    # Categórica; y False, cuando sea Numérica
+    categorical = pd.DataFrame(columns=['Categorical'])
+    for col in list(data.columns.values):
+        if data[col].dtype == 'object':
+            categorical.loc[col] = True
+        else:
+            categorical.loc[col] = False
+
+    # Si es categórica no mayor a 20 elementos únicos, anexar sus valores
+    cat_values = pd.DataFrame(columns=['Categories'])
+    for col in list(data.columns.values):
+        if data[col].dtype == 'object' and data[col].nunique() < 21:
+            cat_values.loc[col] = [data[col].unique()]
+        elif data[col].dtype == 'object' and data[col].nunique() > 20:
+            cat_values.loc[col] = 'Category too large'
+        else:
+            cat_values.loc[col] = 'Not categorical'
+
+    # Unión de tablas / DataFrames
+    return columns.join(data_types).join(missing_values).join(present_values).join(unique_values).join(min_values).join(max_values).join(categorical).join(cat_values)
+
+def clean_ratios_function(df: pd.DataFrame):
+    ratios_only = df.drop(['Stock','fiscalDateEnding'],axis=1).replace(np.inf,np.nan).replace(-np.inf,np.nan)
+    imputer = KNNImputer(n_neighbors=5)
+    imputed_ratios = imputer.fit_transform(ratios_only)
+    df[['PER','PBV','Acid_test','ATR','CCC','ROA','DER','NPM','EM']] = imputed_ratios
+    return df
