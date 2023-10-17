@@ -336,10 +336,12 @@ def dqr(data):
     return columns.join(data_types).join(missing_values).join(present_values).join(unique_values).join(min_values).join(max_values).join(categorical).join(cat_values)
 
 def clean_ratios_function(df: pd.DataFrame):
-    # Conservar solo ratios y reemplazo de infinito (y -infinito) por NaN
     ratios_only = df.drop(['Stock','fiscalDateEnding','Return'],axis=1).replace(np.inf,np.nan).replace(-np.inf,np.nan)
-    # Imputación de valores faltantes 
     imputer = KNNImputer(n_neighbors=5)
     imputed_ratios = imputer.fit_transform(ratios_only)
     df[['PER','PBV','Acid_test','ATR','CCC','ROA','DER','NPM','EM']] = imputed_ratios
+    return df
+
+def final_step_cleansing(df: pd.DataFrame):
+    df = df.drop(['Stock','fiscalDateEnding','PER','PBV','CCC','ROA','ATR','NPM'], axis = 1)
     return df
