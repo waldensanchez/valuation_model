@@ -1,14 +1,14 @@
 import pandas as pd
 import numpy as np
+import warnings
+
+# Ignore warnings
+warnings.filterwarnings('ignore')
 
 # Trade Functions
 def close_position(portfolio: pd.DataFrame, asset: str):
-    if asset == 'Rf':
-        portfolio = portfolio[portfolio.Asset != asset]
-        return portfolio
-    else:
-        # Capitals
-        pass
+    portfolio = portfolio[portfolio.Asset != asset]
+    return portfolio
 
 # Sell Risk Free Functions
 def get_cash(portfolio):
@@ -23,24 +23,25 @@ def sell_risk_free(portfolio, verbose):
         cash = get_cash(portfolio)
         portfolio = close_position(portfolio, 'Rf')
     else:
-        cash = 0
+        cash += 0
     if verbose:
         print('Cash from RF: ', cash)
     return cash, portfolio
 
 ## Calculate Capital's Positions
-def calculate_positions(data, portfolio, weights, portfolio_value, cash, fiscal_date):
+def calculate_positions(data, portfolio, weights,  portfolio_value, cash, fiscal_date, initial_trade):
     # Add Money from RF to capitals value
-    portfolio_value += cash
+    if initial_trade:
+        portfolio_value = cash
+    else:
+        portfolio_value += cash
     print('Portfolio Value: ', portfolio_value)
     # Old Positions
     previous_positions = portfolio[['Asset','Amount']] 
-    previous_positions['Amount'] = previous_positions['Amount'] * -1
+    previous_positions['Amount'] = previous_positions['Amount']
     previous_positions = previous_positions.rename(columns = {'Amount':'Old'})
     # New Positions
     new_positions = weights 
-    print('Weights')
-    print(weights)
     new_positions['Weight'] = new_positions['Weight'] * portfolio_value
     new_positions = new_positions.reset_index()
     new_positions.columns = ['Asset','CashAmt']
@@ -52,7 +53,7 @@ def calculate_positions(data, portfolio, weights, portfolio_value, cash, fiscal_
     # Generate Trade Order
     trade_order = previous_positions.merge(new_positions, how='outer', on='Asset')
     trade_order = trade_order.fillna(0)
-    trade_order['TradeOrder'] = trade_order['New'] + trade_order['Old']
+    trade_order['TradeOrder'] = trade_order['New'] - trade_order['Old']
     print('TRADE ORDER')
     print(trade_order)
     trade_order = trade_order[['Asset','TradeOrder']]
@@ -74,15 +75,17 @@ def sell_capitals(data, trade_order, portfolio, cash, fiscal_date, verbose):
         # Sell whole position
         if available_amount <= abs(amount_to_sell):
             # Position update
+            print('Full Sell')
             portfolio = close_position(portfolio, asset)
             # Cash update
-            cash -= available_amount * sell_price
+            cash += available_amount * sell_price
         # Sell part of the position
         else:
             # Position update
+            print('Partial Sell')
             portfolio.loc[(portfolio.Asset == asset), 'Amount'] += amount_to_sell
             # Cash update
-            cash -= amount_to_sell * sell_price
+            cash += amount_to_sell * sell_price
         if verbose:
             print('Cash from capitals: ', -amount_to_sell * sell_price, ' Remaining: ', cash)
     return portfolio, cash
@@ -102,12 +105,13 @@ def buy_capitals(data, trade_order, portfolio, cash, fiscal_date, verbose):
             initial_price = portfolio[portfolio.Asset == asset].Price.values[0]
             updated_price = initial_price * (existing_position / new_position) + buy_price * (amount_to_buy / new_position) 
             # Position update 
+            print('Partial purchase')
             portfolio.loc[(portfolio.Asset == asset), 'Date'] = fiscal_date
             portfolio.loc[(portfolio.Asset == asset), 'Amount'] = new_position
             portfolio.loc[(portfolio.Asset == asset), 'Amount'] = updated_price # Ponderate prices
             # Cash update
             cash -= new_position * buy_price
-        # Sell whole position
+        # Buy whole position
         else:
             amount_to_buy = buy_orders[buy_orders.Asset == asset].TradeOrder.values[0]
             # Position update 
@@ -116,6 +120,7 @@ def buy_capitals(data, trade_order, portfolio, cash, fiscal_date, verbose):
             # Cash update
             cash -= amount_to_buy * buy_price
         if verbose:
+            print('Full purchase')
             print('Cash spent in capitals: ', amount_to_buy * buy_price, ' Remaining: ', cash)
     return portfolio, cash
 
@@ -141,11 +146,9 @@ def trade(data, portfolio, weights, portfolio_value, assets_list, fiscal_date, i
         cash = initial_capital
     else:
         cash, portfolio = sell_risk_free(portfolio, verbose)
-        if 'Rf' in assets_list:
-            #assets_list.remove('Rf')
-            pass
-    if 'Rf' not in assets_list:
-        trade_order = calculate_positions(data, portfolio, weights, portfolio_value, cash, fiscal_date)
-        portfolio, cash = portfolio_adjustments(data, trade_order, portfolio, cash, fiscal_date, verbose)
+
+    #if 'Rf' not in assets_list:
+    trade_order = calculate_positions(data, portfolio, weights, portfolio_value, cash, fiscal_date, initial_trade)
+    portfolio, cash = portfolio_adjustments(data, trade_order, portfolio, cash, fiscal_date, verbose)
     portfolio = buy_risk_free(data, portfolio, cash, fiscal_date, verbose)
     return portfolio, cash

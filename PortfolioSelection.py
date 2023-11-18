@@ -6,16 +6,15 @@ from datetime import datetime, timedelta
 # Asset Picker Functions
 def verify_assets(data, portfolio, fiscal_date):
     portfolio = portfolio[portfolio.Asset != 'Rf']
-    predictor = data[(data.fiscalDateEnding == fiscal_date) & (data.Yhat == 1)].merge(portfolio, how='inner', left_on='Stock', right_on='Asset')
+    predictor = data[(data.fiscalDateEnding == fiscal_date) & (data.Yhat == 0)].merge(portfolio, how='inner', left_on='Stock', right_on='Asset')
     assets_portfolio = list(predictor.Asset)
-    print('Assets Port:', assets_portfolio)
     return assets_portfolio
 
 def fill_portfolio(data, assets_portfolio, fiscal_date):
     if len(assets_portfolio) == 5:
         return assets_portfolio
     else:
-        predictor = data[(data.fiscalDateEnding == fiscal_date) & (data.Yhat == 1)]
+        predictor = data[(data.fiscalDateEnding == fiscal_date) & (data.Yhat == 0)]
         predictions_available = len(predictor)
         already_selected = len(assets_portfolio)
         missing_assets = 5 - already_selected
@@ -78,7 +77,7 @@ def asset_allocation(data, assets_list, fiscal_date):
     if validate_operation(assets_list):
         weights = omega(data, assets_list, fiscal_date)
     else:
-        weights = [1]
+        weights = pd.DataFrame([1], index=['Rf'], columns=['Weight'])
     return weights
 
 # Valuate Portfolio
